@@ -173,39 +173,52 @@ def generate_undeformed_building(params, nodes_with_load, material_nodes, materi
     # Add beams. First in the x-direction, then in the y-direction by looping over the levels and the width and length
     undeformed_beams = []
 
-    # Add beam elements in x-direction. Start on the first floor. Loop in the width over the number of nodes
+    # Add beam elements in x-direction. Start on the first floor. Loop in the width over the number of nodes but skip
+    # the last node because otherwise the beam would extend outwards of the building. And loop over the length.
     node_tag1 = 1 + params.step_1.no_nodes * params.step_1.no_nodes
     for j in range(1, params.step_1.number_floors + 1):
         for i in range(0, (params.step_1.no_nodes - 1)):
             for k in range(0, params.step_1.no_nodes):
+                # To get the other node (one to the right) to which the beam is connected, add the number of nodes. Add
+                # the structural element of the beam.
                 node_tag2 = node_tag1 + params.step_1.no_nodes
-                i_node = ops.nodeCoord(node_tag1)
-                j_node = ops.nodeCoord(node_tag2)
                 ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000., 2150.,
                             2150., 2, "-mass", mass_x_element, mass_type)
+
+                # Find the coordinates of the nodes and add the Viktor element for the visualization of the beam
+                i_node = ops.nodeCoord(node_tag1)
+                j_node = ops.nodeCoord(node_tag2)
                 beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node), material=material)
                 undeformed_beams.append(beam)
+
                 element_tag += 1
                 node_tag1 += 1
-        node_tag1 += params.step_1.no_nodes
-    node_tag1 = 1 + params.step_1.no_nodes * params.step_1.no_nodes
 
-    # add beam elements in y-direction
+        node_tag1 += params.step_1.no_nodes  # To go the next column of nodes (in the x,y-plane)
+    node_tag1 = 1 + params.step_1.no_nodes * params.step_1.no_nodes  # To go to the next floo
+
+    # Add beam elements in y-direction. Start on the first floor. Loop in the width. And loop over the length over the
+    # number of nodes but skip the last node because otherwise the beam would extend outwards of the building.
     for j in range(1, params.step_1.number_floors + 1):
         for i in range(0, params.step_1.no_nodes):
             for k in range(0, (params.step_1.no_nodes - 1)):
+                # To get the other node (one forward) to which the beam is connected, add 1. And add the structural
+                # element of the beam.
                 node_tag2 = node_tag1 + 1
-                i_node = ops.nodeCoord(node_tag1)
-                j_node = ops.nodeCoord(node_tag2)
                 ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000., 2150.,
                             2150., 2, "-mass", mass_x_element, mass_type)
+
+                # Find the coordinates of the nodes and add the Viktor element for the visualization of the beam
+                i_node = ops.nodeCoord(node_tag1)
+                j_node = ops.nodeCoord(node_tag2)
                 beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node),
                                             material=material)
                 undeformed_beams.append(beam)
                 element_tag += 1
                 node_tag1 += 1
-            node_tag1 += 1
+            node_tag1 += 1  # To get to the column of nodes (in the x,y-plane)
 
+    # Create the undeformed building, which is the base floor, the nodes, the columns and the beams
     undeformed_building_lst = [base_floor, Group(undeformed_nodes), Group(columns_undeformed), Group(undeformed_beams),
                                Group(arrows)]
 
