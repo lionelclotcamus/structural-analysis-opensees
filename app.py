@@ -1,7 +1,9 @@
 import math
+from typing import List, Dict, Tuple
 
 import numpy as np
 import openseespy.opensees as ops
+from munch import Munch
 
 from viktor.parametrization import ViktorParametrization, NumberField, Text, GeometrySelectField, \
     DynamicArray, IntegerField, Step, OptionField, OutputField, FunctionLookup, Lookup, RowLookup
@@ -67,7 +69,8 @@ def create_load_arrow(point_node: Point, magnitude: float, direction: str, mater
     return arrow
 
 
-def generate_undeformed_building(params, nodes_with_load, material_nodes, material):
+def generate_undeformed_building(params: Munch, nodes_with_load: List[Dict], material_nodes: Material,
+                                 material: Material): # -> Tuple[Group, List, List[Label]]:
     """Function to create a 3D building for a structural analysis. The 3D building is visualized with Viktor and the
     structural analysis is performed with OpenSeesPy.
 
@@ -334,6 +337,163 @@ def generate_deformed_building(params, nodes_with_load):
     return deformed_building_lst, labels_deformed_nodes
 
 
+def generate_building(params, mode_of_deformation, nodes_with_load, material_nodes, material):
+    # Initialize structural model
+    ops.wipe()
+    ops.model("Basic", "-ndm", 3, "-ndf", 6)
+
+    # Adding the base floor. This has the width of the building plus some extra space. The extra space is defined by
+    # which direction is the largest: the width or the length.
+    extra_width_floor = max(params.step_1.width, params.step_1.length) / 2
+    base_floor = RectangularExtrusion(
+        width=params.step_1.width + 2 * extra_width_floor,
+        height=3 * b,
+        line=Line(Point(0.5 * params.step_1.width, -extra_width_floor, 0),
+                  Point(0.5 * params.step_1.width, params.step_1.length + extra_width_floor, 0))
+    )
+
+    # Defining the offset for the label of the node
+    offset_label_x = params.step_1.width / OFFSET_LABEL_SCALE
+    offset_label_y = params.step_1.length / OFFSET_LABEL_SCALE
+    offset_label_z = (params.step_1.number_floors * FLOOR_HEIGHT) / OFFSET_LABEL_SCALE
+
+    # Adding undeformed nodes by looping through the levels, width and length of the building for the number of nodes.
+    nodes = []
+    points = []
+    node_labels = []
+    node_tag = 1
+    for z in range(0, (params.step_1.number_floors + 1) * FLOOR_HEIGHT, FLOOR_HEIGHT):
+        for x in np.linspace(0, params.step_1.width, params.step_1.no_nodes):
+            for y in np.linspace(0, params.step_1.length, params.step_1.no_nodes):
+                if mode_of_deformation == 'deformed':
+                    ux = ops.nodeDisp(node_tag, 1) * params.step_2.deformation_scale
+                    uy = ops.nodeDisp(node_tag, 2) * params.step_2.deformation_scale
+                    uz = ops.nodeDisp(node_tag, 3) * params.step_2.deformation_scale
+                else:
+                    ux, uy, uz = 0, 0, 0
+                point = Point(x + ux, y + uy, z + uz)
+                points.append(point)
+                # Create Viktor node and label to visualize
+                nodes.append(Sphere(centre_point=point,
+                                    radius=NODE_RADIUS,
+                                    material=material_deformed,
+                                    identifier=f"{x + ux}-{y + uy}-{z + uz}"))
+                node_labels.append(
+                    Label(Point(x + ux + offset_label_x, y + uy + offset_label_y, z + uz + offset_label_z),
+                          str(node_tag), size_factor=0.6)
+                )
+
+                if mode_of_deformation == 'undeformed':
+                    # Create the OpenSees structural node. The node is identified with a node tag.
+                    ops.node(node_tag, x, y, z)
+                    ops.mass(node_tag, mass_x_node, mass_x_node, 0.01, 1.0e-10, 1.0e-10, 1.0e-10)
+
+                    # If the node is on the ground floor, it is fixed so this should be added the the OpenSees node.
+                    if z == 0:
+                        ops.fix(node_tag, 1, 1, 1, 1, 1, 1)
+
+                    # Check if this node is the selected node with a load to find the node tag of the node with a load.
+                    if [x, y, z] in [load["coords"] for load in nodes_with_load]:
+                        index = [load["coords"] for load in nodes_with_load].index([x, y, z])
+                        nodes_with_load[index]["node_tag"] = node_tag
+
+                node_tag += 1
+
+    # Loop through the nodes with a load and create the load arrows.
+    arrows = []
+    for node in nodes_with_load:
+        arrow = create_load_arrow(points[node["node_tag"] - 1], node["magnitude"], node["direction"],
+                                  material=material_undeformed_arrow)
+        arrows.append(arrow)
+
+    # Defining different transformations for the OpenSees analysis.
+    ops.geomTransf(coord_transf, 1, 1, 0, 0)
+    ops.geomTransf(coord_transf, 2, 0, 0, 1)
+
+    # Adding columns by looping over the floors, and the nodes in the width and length of the building.
+    element_tag = 1
+    node_tag1 = 1
+    columns = []
+    for k in range(0, params.step_1.number_floors):
+        for i in range(0, params.step_1.no_nodes):
+            for j in range(0, params.step_1.no_nodes):
+                # Find the node and its coordinates that is at the same x,y location but on the next floor to create
+                # the vertical column.
+                node_tag2 = node_tag1 + params.step_1.no_nodes * params.step_1.no_nodes
+                i_node = points[node_tag1 - 1]
+                j_node = points[node_tag2 - 1]
+
+                if mode_of_deformation == "undeformed":
+                    # Create the OpenSees element
+                    # Definition of element in OpenSees docs: ops.element('elasticBeamColumn', eleTag, *eleNodes, Area,
+                    # E_mod, G_mod, Jxx, Iy, Iz, transfTag, <'-mass', mass>, <'-cMass'>)
+                    ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, area, E, G, Jxx, Iy, Iz, 1,
+                                "-mass", mass_x_element, mass_type)
+
+                # Create the column to visualize
+                col = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node), material=material)
+                columns.append(col)
+
+                element_tag += 1
+                node_tag1 += 1
+
+    # Add beams. First in the x-direction, then in the y-direction by looping over the levels and the width and length
+    beams = []
+
+    # Add beam elements in x-direction. Start on the first floor. Loop in the width over the number of nodes but skip
+    # the last node because otherwise the beam would extend outwards of the building. And loop over the length.
+    node_tag1 = 1 + params.step_1.no_nodes * params.step_1.no_nodes
+    for j in range(1, params.step_1.number_floors + 1):
+        for i in range(0, (params.step_1.no_nodes - 1)):
+            for k in range(0, params.step_1.no_nodes):
+                # To get the other node (one to the right) to which the beam is connected, add the number of nodes. Add
+                # the structural element of the beam.
+                node_tag2 = node_tag1 + params.step_1.no_nodes
+                if mode_of_deformation == "undeformed":
+                    ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000., 2150.,
+                                2150., 2, "-mass", mass_x_element, mass_type)
+
+                # Find the coordinates of the nodes and add the Viktor element for the visualization of the beam
+                i_node = points[node_tag1 - 1]
+                j_node = points[node_tag2 - 1]
+                beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node), material=material)
+                beams.append(beam)
+
+                element_tag += 1
+                node_tag1 += 1
+
+        node_tag1 += params.step_1.no_nodes  # To go the next column of nodes (in the x,y-plane)
+    node_tag1 = 1 + params.step_1.no_nodes * params.step_1.no_nodes  # To go to the next floo
+
+    # Add beam elements in y-direction. Start on the first floor. Loop in the width. And loop over the length over the
+    # number of nodes but skip the last node because otherwise the beam would extend outwards of the building.
+    for j in range(1, params.step_1.number_floors + 1):
+        for i in range(0, params.step_1.no_nodes):
+            for k in range(0, (params.step_1.no_nodes - 1)):
+                # To get the other node (one forward) to which the beam is connected, add 1. And add the structural
+                # element of the beam.
+                node_tag2 = node_tag1 + 1
+                if mode_of_deformation == "undeformed":
+                    ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000., 2150.,
+                                2150., 2, "-mass", mass_x_element, mass_type)
+
+                # Find the coordinates of the nodes and add the Viktor element for the visualization of the beam
+                i_node = points[node_tag1 - 1]
+                j_node = points[node_tag2 - 1]
+                beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node),
+                                            material=material)
+                beams.append(beam)
+                element_tag += 1
+                node_tag1 += 1
+            node_tag1 += 1  # To get to the column of nodes (in the x,y-plane)
+
+    # Create the undeformed building, which is the base floor, the nodes, the columns and the beams
+    building_lst = [base_floor, Group(nodes), Group(columns), Group(beams),
+                               Group(arrows)]
+
+    return nodes, building_lst, node_labels
+
+
 class Parametrization(ViktorParametrization):
     step_1 = Step("Create Model", views=["get_geometry"])
     step_1.text1 = Text(
@@ -371,7 +531,11 @@ class Controller(ViktorController):
             material_nodes=material_basic_nodes,
             material=material_basic
         )
-
+        # undeformed_nodes, undeformed_building_lst, labels = generate_building(
+        #     params, "undeformed", [],
+        #     material_nodes=material_basic_nodes,
+        #     material=material_basic
+        # )
         # Find nodes that are selected to have a load
         if len(params.step_1.nodes_with_load_array) != 0:
             for i, node in enumerate(params.step_1.nodes_with_load_array):
