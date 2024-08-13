@@ -69,7 +69,10 @@ def create_load_arrow(point_node: Point, magnitude: float, direction: str, mater
     return arrow
 
 
-def run_opensees_model(nodes_with_load):
+def run_opensees_model(nodes_with_load: List[Dict]) -> None:
+    """Function to run the opensees model.
+    First, the analysis is defined and the loads are added before the analysis can be run.
+    """
     # Define Static Analysis
     ops.timeSeries("Linear", 1)
     ops.pattern("Plain", 1, 1)
@@ -90,14 +93,11 @@ def run_opensees_model(nodes_with_load):
     return
 
 
-def generate_building(params, mode_of_deformation, nodes_with_load, material_nodes, material):
-    # Initialize structural model
-    if mode_of_deformation == "undeformed":
-        ops.wipe()
-        ops.model("Basic", "-ndm", 3, "-ndf", 6)
-
-    # Adding the base floor. This has the width of the building plus some extra space. The extra space is defined by
-    # which direction is the largest: the width or the length.
+def add_base_floor(params: Munch) -> RectangularExtrusion:
+    """Function to add a base floor to the model for visualization.
+    This has the width of the building plus some extra space. The extra space is defined by which direction is the
+    largest: the width or the length.
+    """
     extra_width_floor = max(params.step_1.width, params.step_1.length) / 2
     base_floor = RectangularExtrusion(
         width=params.step_1.width + 2 * extra_width_floor,
@@ -105,13 +105,23 @@ def generate_building(params, mode_of_deformation, nodes_with_load, material_nod
         line=Line(Point(0.5 * params.step_1.width, -extra_width_floor, 0),
                   Point(0.5 * params.step_1.width, params.step_1.length + extra_width_floor, 0))
     )
+    return base_floor
 
+
+def add_nodes(params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List, material_nodes: Material) \
+        -> Tuple[List[Point], List[Sphere], List[Label]]:
+    """Function to add nodes to the OpenSees model and for visualisation.
+    First, an offset is defined for the positioning of the labels next to the nodes. Then, the nodes will be added by
+    looping over the building.
+    If the mode is 'deformed', the displacement will be considered. If the mode is 'undeformed', nodes will be added to
+    the OpenSees model and the node with a load need to be found.
+    """
     # Defining the offset for the label of the node
     offset_label_x = params.step_1.width / OFFSET_LABEL_SCALE
     offset_label_y = params.step_1.length / OFFSET_LABEL_SCALE
     offset_label_z = (params.step_1.number_floors * FLOOR_HEIGHT) / OFFSET_LABEL_SCALE
 
-    # Adding undeformed nodes by looping through the levels, width and length of the building for the number of nodes.
+    # Adding the nodes by looping through the levels, width and length of the building for the number of nodes.
     nodes = []
     points = []
     node_labels = []
@@ -130,7 +140,7 @@ def generate_building(params, mode_of_deformation, nodes_with_load, material_nod
                 # Create Viktor node and label to visualize
                 nodes.append(Sphere(centre_point=point,
                                     radius=NODE_RADIUS,
-                                    material=material_deformed,
+                                    material=material_nodes,
                                     identifier=f"{x + ux}-{y + uy}-{z + uz}"))
                 node_labels.append(
                     Label(Point(x + ux + offset_label_x, y + uy + offset_label_y, z + uz + offset_label_z),
@@ -153,19 +163,28 @@ def generate_building(params, mode_of_deformation, nodes_with_load, material_nod
 
                 node_tag += 1
 
-    # Loop through the nodes with a load and create the load arrows.
+    return points, nodes, node_labels
+
+
+def add_arrows(nodes_with_load: List[Dict] | List, points: List[Point], material_arrow: Material) -> List[Group] | List:
+    """Function to add an arrow to the building for visualisation.
+    To create the load arrows, loop through the nodes with a load.
+    """
     arrows = []
     for node in nodes_with_load:
         arrow = create_load_arrow(points[node["node_tag"] - 1], node["magnitude"], node["direction"],
-                                  material=material_undeformed_arrow)
+                                  material=material_arrow)
         arrows.append(arrow)
 
-    if mode_of_deformation == "undeformed":
-        # Defining different transformations for the OpenSees analysis.
-        ops.geomTransf(coord_transf, 1, 1, 0, 0)
-        ops.geomTransf(coord_transf, 2, 0, 0, 1)
+    return arrows
 
-    # Adding columns by looping over the floors, and the nodes in the width and length of the building.
+
+def add_columns(params: Munch, mode_of_deformation: str, points: List[Point], material: Material) \
+        -> Tuple[List[RectangularExtrusion], int]:
+    """Function to add columns to the model.
+    Adding columns by looping over the floors, and the nodes in the width and length of the building.
+    If the mode is 'undeformed', the columns will be added to the OpenSees model with as an element.
+    """
     element_tag = 1
     node_tag1 = 1
     columns = []
@@ -192,7 +211,14 @@ def generate_building(params, mode_of_deformation, nodes_with_load, material_nod
                 element_tag += 1
                 node_tag1 += 1
 
-    # Add beams. First in the x-direction, then in the y-direction by looping over the levels and the width and length
+    return columns, element_tag
+
+
+def add_beams(params: Munch, mode_of_deformation: str, points: List[Point], element_tag: int, material: Material) \
+        -> List[RectangularExtrusion]:
+    """"Function to add beams to the model.
+    First in the x-direction, then in the y-direction by looping over the levels and the width and length.
+    If the mode is 'undeformed', add the beams as an element to the OpenSees model."""
     beams = []
 
     # Add beam elements in x-direction. Start on the first floor. Loop in the width over the number of nodes but skip
@@ -242,9 +268,32 @@ def generate_building(params, mode_of_deformation, nodes_with_load, material_nod
                 node_tag1 += 1
             node_tag1 += 1  # To get to the column of nodes (in the x,y-plane)
 
+    return beams
+
+
+def generate_building(params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
+                      material_nodes: Material, material: Material, material_arrow: Material) \
+        -> Tuple[List[Sphere], List, List[Label]]:
+    # Initialize structural model
+    if mode_of_deformation == "undeformed":
+        ops.wipe()
+        ops.model("Basic", "-ndm", 3, "-ndf", 6)
+
+    # Adding the base floor, nodes and arrows for the loads.
+    base_floor = add_base_floor(params)
+    points, nodes, node_labels = add_nodes(params, mode_of_deformation, nodes_with_load, material_nodes)
+    arrows = add_arrows(nodes_with_load, points, material_arrow)
+
+    if mode_of_deformation == "undeformed":
+        # Defining different transformations for the OpenSees analysis.
+        ops.geomTransf(coord_transf, 1, 1, 0, 0)
+        ops.geomTransf(coord_transf, 2, 0, 0, 1)
+
+    columns, element_tag = add_columns(params, mode_of_deformation, points, material)  # Adding columns
+    beams = add_beams(params, mode_of_deformation, points, element_tag, material)  # Adding beams
+
     # Create the undeformed building, which is the base floor, the nodes, the columns and the beams
-    building_lst = [base_floor, Group(nodes), Group(columns), Group(beams),
-                               Group(arrows)]
+    building_lst = [base_floor, Group(nodes), Group(columns), Group(beams), Group(arrows)]
 
     return nodes, building_lst, node_labels
 
@@ -284,7 +333,8 @@ class Controller(ViktorController):
         undeformed_nodes, undeformed_building_lst, labels = generate_building(
             params, "undeformed", [],
             material_nodes=material_basic_nodes,
-            material=material_basic
+            material=material_basic,
+            material_arrow=material_undeformed_arrow
         )
         # Find nodes that are selected to have a load
         if len(params.step_1.nodes_with_load_array) != 0:
@@ -331,7 +381,8 @@ class Controller(ViktorController):
         undeformed_nodes, undeformed_building_lst, undeformed_labels = generate_building(
             params, "undeformed", nodes_with_load,
             material_nodes=material_undeformed,
-            material=material_undeformed
+            material=material_undeformed,
+            material_arrow=material_undeformed_arrow
         )
         undeformed_building = Group(undeformed_building_lst)
 
@@ -342,7 +393,8 @@ class Controller(ViktorController):
         deformed_nodes, deformed_building_lst, labels_deformed_nodes = generate_building(
             params, "deformed", nodes_with_load,
             material_nodes=material_deformed,
-            material=material_deformed
+            material=material_deformed,
+            material_arrow=material_deformed_arrow
         )
         deformed_building = Group(deformed_building_lst)
 
