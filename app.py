@@ -300,9 +300,19 @@ def generate_building(params: Munch, mode_of_deformation: str, nodes_with_load: 
 class Parametrization(ViktorParametrization):
     step_1 = Step("Create Model", views=["get_geometry"])
     step_1.text1 = Text(
-        "## Structural Analysis using OpenSees\n"
-        "Template to use OpenSees for a structural analysis of a 3D frame. The docs of OpenSeesPy can be found on "
-        "[this page](https://openseespydoc.readthedocs.io/)."
+        """## Structural Analysis using OpenSees\n
+Welcome to our Structural Analysis App, a tool designed for the analysis of 3D frame buildings. 
+Built on the OpenSeesPy framework, which leverages OpenSees (Open System for Earthquake Engineering Simulation), 
+widely-used software for simulating the response of structural and geotechnical systems to loads. 
+
+This app allows users to: 
+
+* easily customize building dimensions 📏, 
+* apply directional loads to specific nodes ↗️,
+* visualize the resulting deformations after running a structural analysis 🏗️. ️\n
+The docs of OpenSeesPy can be found on 
+[this page](https://openseespydoc.readthedocs.io/).
+        """
     )
     step_1.width = NumberField("Width", min=1, default=30, suffix="m", num_decimals=2)
     step_1.length = NumberField("Length", min=1, default=30, suffix="m", num_decimals=2)
@@ -319,7 +329,12 @@ class Parametrization(ViktorParametrization):
     step_1.nodes_with_load_array.node = GeometrySelectField("Select the node to apply a load")
 
     step_2 = Step("Run Analysis", views=["get_deformed_geometry"], width=30)
-    step_2.deformation_scale = NumberField("Scale the deformation", min=0, max=1e7, default=1000, num_decimals=2)
+    step_2.text = Text("""
+## Run the analysis and view the results
+To view the deformed building, click on 'Run analysis' in the bottom right 🔄. You can scale the deformation with the 
+'Deformation scale factor' below.
+    """)
+    step_2.deformation_scale = NumberField("Deformation scale factor", min=0, max=1e7, default=1000, num_decimals=2)
 
 
 class Controller(ViktorController):
