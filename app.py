@@ -5,11 +5,10 @@ import numpy as np
 import openseespy.opensees as ops
 from munch import Munch
 
-from viktor.parametrization import ViktorParametrization, NumberField, Text, GeometrySelectField, \
-    DynamicArray, IntegerField, Step, OptionField, OutputField, FunctionLookup, Lookup, RowLookup
+from viktor.parametrization import (ViktorParametrization, NumberField, Text, GeometrySelectField, DynamicArray,
+                                    IntegerField, Step, OptionField)
 from viktor import ViktorController, UserError
-from viktor.geometry import Material, Color, Group, LinearPattern, Point, RectangularExtrusion, Line, \
-    BidirectionalPattern, Sphere, Cone, Vector, SquareBeam
+from viktor.geometry import Material, Color, Group, Point, RectangularExtrusion, Line, Sphere, Cone, Vector
 from viktor.views import GeometryView, GeometryResult, Label
 
 FLOOR_HEIGHT = 4
