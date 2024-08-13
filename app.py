@@ -354,20 +354,21 @@ class Controller(ViktorController):
         if len(params.step_1.nodes_with_load_array) != 0:
             for i, node in enumerate(params.step_1.nodes_with_load_array):
                 # Check if the information is complete
-                if node.magnitude is not None and node.direction is not None and node.node is not None:
-                    # Find the coordinates of the node and check if it is part of the undeformed nodes. If not,
-                    # display an error to the user.
-                    coords = [float(i) for i in node.node.split("-")]
-                    if (Point(coords[0], coords[1], coords[2]) not in
-                            [sphere.centre_point for sphere in undeformed_nodes]):
-                        raise UserError(f"The selected node for load number {i + 1} is not an existing node, reselect "
-                                        f"the node.")
+                if node.magnitude is not None and node.direction is not None:
+                    if node.node is not None:
+                        # Find the coordinates of the node and check if it is part of the undeformed nodes. If not,
+                        # display an error to the user.
+                        coords = [float(i) for i in node.node.split("-")]
+                        if (Point(coords[0], coords[1], coords[2]) not in
+                                [sphere.centre_point for sphere in undeformed_nodes]):
+                            raise UserError(f"The selected node for load number {i + 1} is not an existing node, reselect "
+                                            f"the node.")
 
-                    # Create the arrow of the load and add it to the building
-                    material_load_arrow = Material("Arrow", color=Color(255, 0, 0))
-                    load_arrow = create_load_arrow(Point(coords[0], coords[1], coords[2]), node.magnitude,
-                                                   node.direction, material=material_load_arrow)
-                    undeformed_building_lst.append(load_arrow)
+                        # Create the arrow of the load and add it to the building
+                        material_load_arrow = Material("Arrow", color=Color(255, 0, 0))
+                        load_arrow = create_load_arrow(Point(coords[0], coords[1], coords[2]), node.magnitude,
+                                                       node.direction, material=material_load_arrow)
+                        undeformed_building_lst.append(load_arrow)
                 else:
                     # If the information is not complete, show an error
                     raise UserError(f"Complete the information from load number {i + 1}.")
