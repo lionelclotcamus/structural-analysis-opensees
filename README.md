@@ -39,4 +39,4 @@ right. Once the analysis is complete, both the undeformed and deformed building 
 deformation can be scaled with the 'Deformation scale factor'. If this is altered, the analysis must be performed 
 again by clicking on 'Run analysis'.
 
-![Step 2](.viktor-template/step_2_1.gif)
+![Step 2](.viktor-template/step_2.gif)
