@@ -14,7 +14,7 @@ Features include:
 such as, but not limited to, an application or cloud-based service that uses import openseespy, requires a license 
 similar to that required for commercial redistribution of OpenSees.exe. Contact 
 [UC Berkeley](https://opensees.github.io/OpenSeesDocumentation/developer/license.html) for commercial licensing 
-details. Contact Dr. Minjie Zhu (zhum@oregonstate.edu) for other questions.
+details.
 
 ### Step 1a: Create the 3D frame building
 The width, length and number of floors can easily be adjusted. Additionally, the number of nodes per side can be 
