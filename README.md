@@ -14,6 +14,8 @@ Features include:
 The width, length and number of floors can easily be adjusted. Additionally, the number of nodes per side can be 
 changed.
 
+![Step 1a](.viktor-template/step_1a.gif)
+
 ### Step 1b: Apply loads
 For each load, a magnitude, direction and location can be defined.
 - The magnitude is defined in kN.
@@ -23,8 +25,12 @@ For each load, a magnitude, direction and location can be defined.
 Extra loads can be added by clicking on 'Add new row'. The load is visualized in the view on the right side with a red 
 arrow.
 
+![Step 1b](.viktor-template/step_1b.gif)
+
 ### Step 2: Running the analysis and viewing the results
 After clicking on 'Next Step', the analysis can be performed by clicking on the 'Run analysis' button in the bottom 
 right. Once the analysis is complete, both the undeformed and deformed building can be viewed on the right side. The 
 deformation can be scaled with the 'Deformation scale factor'. If this is altered, the analysis must be performed 
 again by clicking on 'Run analysis'.
+
+![Step 2](.viktor-template/step_2.gif)
