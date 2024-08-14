@@ -73,10 +73,11 @@ The docs of OpenSeesPy can be found on
     step_2.text = Text("""
 ## Run the analysis and view the results
 To view the deformed building, click on 'Run analysis' in the bottom right 🔄. You can scale the deformation with the 
-'Deformation scale factor' below.
+'Deformation scale factor' below. The displacement can also be mapped onto the building in a color scale by turning on 
+the 'Displacement color map'.
     """)
     step_2.deformation_scale = NumberField("Deformation scale factor", min=0, max=1e7, default=1000, num_decimals=2)
-    step_2.deformation_color_scale = BooleanField("Visualize deformation in color scale")
+    step_2.deformation_color_scale = BooleanField("Displacement color map")
 
 
 class Controller(ViktorController):
@@ -150,7 +151,7 @@ class Controller(ViktorController):
         )
         return base_floor
 
-    def get_color_from_displacement(self, displacement, max_displacement):
+    def get_color_from_displacement(self, displacement: float, max_displacement: float) -> Tuple[int, int, int]:
         # Normalize the displacement to be between 0 and 1
         normalized_displacement = displacement / max_displacement
 
@@ -185,14 +186,22 @@ class Controller(ViktorController):
 
         return red, green, blue
 
+    def add_color_to_column_or_beam(self, node_tag1: int, node_tag2: int, abs_displacement_nodes: List[float],
+                                    max_displacement: float) -> Material:
+        displacement_i_node = abs_displacement_nodes[node_tag1 - 1]
+        displacement_j_node = abs_displacement_nodes[node_tag2 - 1]
+        displacement_mid_column = 0.5 * (displacement_i_node + displacement_j_node)
+        red, green, blue = self.get_color_from_displacement(displacement_mid_column, max_displacement)
+        return Material("Column", color=Color(red, green, blue))
+
     def add_nodes(self, params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
                   material_nodes: Material) \
-            -> Tuple[List[Point], List[Sphere], List[Label]]:
+            -> Tuple[List[Point], List[Sphere], List[Label], List, float]:
         """Function to add nodes to the OpenSees model and for visualisation.
-        First, an offset is defined for the positioning of the labels next to the nodes. Then, the nodes will be added by
-        looping over the building.
-        If the mode is 'deformed', the displacement will be considered. If the mode is 'undeformed', nodes will be added to
-        the OpenSees model and the node with a load need to be found.
+        First, an offset is defined for the positioning of the labels next to the nodes. Then, the nodes will be added
+        by looping over the building.
+        If the mode is 'deformed', the displacement will be considered. If the mode is 'undeformed', nodes will be
+        added to the OpenSees model and the node with a load need to be found.
         """
         # Defining the offset for the label of the node
         offset_label_x = params.step_1.width / OFFSET_LABEL_SCALE
@@ -200,15 +209,17 @@ class Controller(ViktorController):
         offset_label_z = (params.step_1.number_floors * FLOOR_HEIGHT) / OFFSET_LABEL_SCALE
 
         max_displacement = 0
+        abs_displacement_nodes = []
         if mode_of_deformation == "deformed" and params.step_2.deformation_color_scale:
             for node_tag in range(1, (params.step_1.number_floors + 1) * params.step_1.no_nodes ** 2 + 1):
                 ux = ops.nodeDisp(node_tag, 1)
                 uy = ops.nodeDisp(node_tag, 2)
                 uz = ops.nodeDisp(node_tag, 3)
 
-                displacement = math.sqrt(ux ** 2 + uy ** 2 + uz ** 2)
-                if displacement > max_displacement:
-                    max_displacement = displacement
+                abs_displacement = math.sqrt(ux ** 2 + uy ** 2 + uz ** 2)
+                abs_displacement_nodes.append(abs_displacement)
+                if abs_displacement > max_displacement:
+                    max_displacement = abs_displacement
 
         # Adding the nodes by looping through the levels, width and length of the building for the number of nodes.
         nodes = []
@@ -224,10 +235,8 @@ class Controller(ViktorController):
                         uz = ops.nodeDisp(node_tag, 3) * params.step_2.deformation_scale
 
                         if params.step_2.deformation_color_scale:
-                            abs_displacement = math.sqrt((ux / params.step_2.deformation_scale)**2 +
-                                                         (uy / params.step_2.deformation_scale)**2 +
-                                                         (uz / params.step_2.deformation_scale)**2)
-                            red, green, blue = self.get_color_from_displacement(abs_displacement, max_displacement)
+                            red, green, blue = self.get_color_from_displacement(abs_displacement_nodes[node_tag - 1],
+                                                                                max_displacement)
                             material_nodes = Material("Node", color=Color(red, green, blue))
 
                     else:
@@ -253,17 +262,17 @@ class Controller(ViktorController):
                         if z == 0:
                             ops.fix(node_tag, 1, 1, 1, 1, 1, 1)
 
-                        # Check if this node is the selected node with a load to find the node tag of the node with a load.
+                        # Check if this node is the selected node with a load to find the node tag.
                         if [x, y, z] in [load["coords"] for load in nodes_with_load]:
                             index = [load["coords"] for load in nodes_with_load].index([x, y, z])
                             nodes_with_load[index]["node_tag"] = node_tag
 
                     node_tag += 1
 
-        return points, nodes, node_labels
+        return points, nodes, node_labels, abs_displacement_nodes, max_displacement
 
-    def add_arrows(self, nodes_with_load: List[Dict] | List, points: List[Point], material_arrow: Material) -> List[
-                                                                                                             Group] | List:
+    def add_arrows(self, nodes_with_load: List[Dict] | List, points: List[Point], material_arrow: Material) \
+            -> List[Group] | List:
         """Function to add an arrow to the building for visualisation.
         To create the load arrows, loop through the nodes with a load.
         """
@@ -275,7 +284,8 @@ class Controller(ViktorController):
 
         return arrows
 
-    def add_columns(self, params: Munch, mode_of_deformation: str, points: List[Point], material: Material) \
+    def add_columns(self, params: Munch, mode_of_deformation: str, points: List[Point], material: Material,
+                    abs_displacement_nodes: List, max_displacement: float) \
             -> Tuple[List[RectangularExtrusion], int]:
         """Function to add columns to the model.
         Adding columns by looping over the floors, and the nodes in the width and length of the building.
@@ -295,10 +305,14 @@ class Controller(ViktorController):
 
                     if mode_of_deformation == "undeformed":
                         # Create the OpenSees element
-                        # Definition of element in OpenSees docs: ops.element('elasticBeamColumn', eleTag, *eleNodes, Area,
-                        # E_mod, G_mod, Jxx, Iy, Iz, transfTag, <'-mass', mass>, <'-cMass'>)
-                        ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, area, E, G, Jxx, Iy, Iz, 1,
-                                    "-mass", mass_x_element, mass_type)
+                        # Definition of element in OpenSees docs: ops.element('elasticBeamColumn', eleTag, *eleNodes,
+                        # Area, E_mod, G_mod, Jxx, Iy, Iz, transfTag, <'-mass', mass>, <'-cMass'>)
+                        ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, area, E, G, Jxx, Iy,
+                                    Iz, 1, "-mass", mass_x_element, mass_type)
+
+                    if params.step_2.deformation_color_scale and mode_of_deformation == "deformed":
+                        material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
+                                                                    max_displacement)
 
                     # Create the column to visualize
                     col = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node), material=material)
@@ -310,29 +324,34 @@ class Controller(ViktorController):
         return columns, element_tag
 
     def add_beams(self, params: Munch, mode_of_deformation: str, points: List[Point], element_tag: int,
-                  material: Material) \
+                  material: Material, abs_displacement_nodes: List, max_displacement: float) \
             -> List[RectangularExtrusion]:
         """"Function to add beams to the model.
         First in the x-direction, then in the y-direction by looping over the levels and the width and length.
         If the mode is 'undeformed', add the beams as an element to the OpenSees model."""
         beams = []
 
-        # Add beam elements in x-direction. Start on the first floor. Loop in the width over the number of nodes but skip
-        # the last node because otherwise the beam would extend outwards of the building. And loop over the length.
+        # Add beam elements in x-direction. Start on the first floor. Loop in the width over the number of nodes but
+        # skip the last node because otherwise the beam would extend outwards of the building. And loop over the length.
         node_tag1 = 1 + params.step_1.no_nodes * params.step_1.no_nodes
         for j in range(1, params.step_1.number_floors + 1):
             for i in range(0, (params.step_1.no_nodes - 1)):
                 for k in range(0, params.step_1.no_nodes):
-                    # To get the other node (one to the right) to which the beam is connected, add the number of nodes. Add
-                    # the structural element of the beam.
+                    # To get the other node (one to the right) to which the beam is connected, add the number of nodes.
+                    # Add the structural element of the beam.
                     node_tag2 = node_tag1 + params.step_1.no_nodes
                     if mode_of_deformation == "undeformed":
-                        ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000., 2150.,
-                                    2150., 2, "-mass", mass_x_element, mass_type)
+                        ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000.,
+                                    2150., 2150., 2, "-mass", mass_x_element, mass_type)
 
                     # Find the coordinates of the nodes and add the Viktor element for the visualization of the beam
                     i_node = points[node_tag1 - 1]
                     j_node = points[node_tag2 - 1]
+
+                    if params.step_2.deformation_color_scale and mode_of_deformation == "deformed":
+                        material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
+                                                                    max_displacement)
+
                     beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node), material=material)
                     beams.append(beam)
 
@@ -342,8 +361,8 @@ class Controller(ViktorController):
             node_tag1 += params.step_1.no_nodes  # To go the next column of nodes (in the x,y-plane)
         node_tag1 = 1 + params.step_1.no_nodes * params.step_1.no_nodes  # To go to the next floo
 
-        # Add beam elements in y-direction. Start on the first floor. Loop in the width. And loop over the length over the
-        # number of nodes but skip the last node because otherwise the beam would extend outwards of the building.
+        # Add beam elements in y-direction. Start on the first floor. Loop in the width. And loop over the length over
+        # the number of nodes but skip the last node because otherwise the beam would extend outwards of the building.
         for j in range(1, params.step_1.number_floors + 1):
             for i in range(0, params.step_1.no_nodes):
                 for k in range(0, (params.step_1.no_nodes - 1)):
@@ -351,12 +370,17 @@ class Controller(ViktorController):
                     # element of the beam.
                     node_tag2 = node_tag1 + 1
                     if mode_of_deformation == "undeformed":
-                        ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000., 2150.,
-                                    2150., 2, "-mass", mass_x_element, mass_type)
+                        ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, 50., E, 1000., 1000.,
+                                    2150., 2150., 2, "-mass", mass_x_element, mass_type)
 
                     # Find the coordinates of the nodes and add the Viktor element for the visualization of the beam
                     i_node = points[node_tag1 - 1]
                     j_node = points[node_tag2 - 1]
+
+                    if params.step_2.deformation_color_scale and mode_of_deformation == "deformed":
+                        material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
+                                                                    max_displacement)
+
                     beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node),
                                                 material=material)
                     beams.append(beam)
@@ -376,7 +400,9 @@ class Controller(ViktorController):
 
         # Adding the base floor, nodes and arrows for the loads.
         base_floor = self.add_base_floor(params)
-        points, nodes, node_labels = self.add_nodes(params, mode_of_deformation, nodes_with_load, material_nodes)
+        points, nodes, node_labels, abs_displacement_nodes, max_displacement = self.add_nodes(
+            params, mode_of_deformation, nodes_with_load, material_nodes
+        )
         arrows = self.add_arrows(nodes_with_load, points, material_arrow)
 
         if mode_of_deformation == "undeformed":
@@ -384,8 +410,10 @@ class Controller(ViktorController):
             ops.geomTransf(coord_transf, 1, 1, 0, 0)
             ops.geomTransf(coord_transf, 2, 0, 0, 1)
 
-        columns, element_tag = self.add_columns(params, mode_of_deformation, points, material)  # Adding columns
-        beams = self.add_beams(params, mode_of_deformation, points, element_tag, material)  # Adding beams
+        columns, element_tag = self.add_columns(params, mode_of_deformation, points, material, abs_displacement_nodes,
+                                                max_displacement)  # Adding columns
+        beams = self.add_beams(params, mode_of_deformation, points, element_tag, material, abs_displacement_nodes,
+                               max_displacement)  # Adding beams
 
         # Create the undeformed building, which is the base floor, the nodes, the columns and the beams
         building_lst = [base_floor, Group(nodes), Group(columns), Group(beams), Group(arrows)]
@@ -412,8 +440,8 @@ class Controller(ViktorController):
                         coords = [float(i) for i in node.node.split("-")]
                         if (Point(coords[0], coords[1], coords[2]) not in
                                 [sphere.centre_point for sphere in undeformed_nodes]):
-                            raise UserError(f"The selected node for load number {i + 1} is not an existing node, reselect "
-                                            f"the node.")
+                            raise UserError(f"The selected node for load number {i + 1} is not an existing node,"
+                                            f" reselect the node.")
 
                         # Create the arrow of the load and add it to the building
                         material_load_arrow = Material("Arrow", color=Color(255, 0, 0))
