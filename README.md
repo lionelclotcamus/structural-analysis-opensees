@@ -10,6 +10,12 @@ Features include:
 - Running the structural analysis 
 - Visualization of the deformed building
 
+**Important** OpenSeesPy is free for research, education, and internal use. Commercial redistribution of OpenSeesPy, 
+such as, but not limited to, an application or cloud-based service that uses import openseespy, requires a license 
+similar to that required for commercial redistribution of OpenSees.exe. Contact 
+[UC Berkeley](https://opensees.github.io/OpenSeesDocumentation/developer/license.html) for commercial licensing 
+details. Contact Dr. Minjie Zhu (zhum@oregonstate.edu) for other questions.
+
 ### Step 1a: Create the 3D frame building
 The width, length and number of floors can easily be adjusted. Additionally, the number of nodes per side can be 
 changed.
@@ -33,4 +39,4 @@ right. Once the analysis is complete, both the undeformed and deformed building 
 deformation can be scaled with the 'Deformation scale factor'. If this is altered, the analysis must be performed 
 again by clicking on 'Run analysis'.
 
-![Step 2](.viktor-template/step_2.gif)
+![Step 2](.viktor-template/step_2_1.gif)
