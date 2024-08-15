@@ -6,10 +6,10 @@ import openseespy.opensees as ops
 from munch import Munch
 
 from viktor.parametrization import (ViktorParametrization, NumberField, Text, GeometrySelectField, DynamicArray,
-                                    IntegerField, Step, OptionField, BooleanField)
+                                    IntegerField, Step, OptionField)
 from viktor import ViktorController, UserError
 from viktor.geometry import Material, Color, Group, Point, RectangularExtrusion, Line, Sphere, Cone, Vector
-from viktor.views import GeometryView, GeometryResult, Label
+from viktor.views import GeometryView, GeometryResult
 
 FLOOR_HEIGHT = 4
 DEFAULT_NUMBER_FLOORS = 10
@@ -34,8 +34,6 @@ material_deformed = Material("Node", color=Color.viktor_blue())
 material_deformed_arrow = Material("Arrow", color=Color(255, 0, 0))
 material_undeformed = Material("Node", color=Color(220, 220, 220), opacity=0.5)
 material_undeformed_arrow = Material("Arrow", color=Color(255, 158, 145), opacity=0.5)
-
-OFFSET_LABEL_SCALE = 40
 
 
 class Parametrization(ViktorParametrization):
@@ -200,8 +198,7 @@ class Controller(ViktorController):
                   material_nodes: Material) \
             -> Tuple[List[Point], List[Sphere], List, float]:
         """Function to add nodes to the OpenSees model and for visualisation.
-        First, an offset is defined for the positioning of the labels next to the nodes. Then, the nodes will be added
-        by looping over the building.
+        The nodes will be added by looping over the building.
         If the mode is 'deformed', the displacement will be considered. If the mode is 'undeformed', nodes will be
         added to the OpenSees model and the node with a load need to be found.
         """
@@ -221,7 +218,6 @@ class Controller(ViktorController):
         # Adding the nodes by looping through the levels, width and length of the building for the number of nodes.
         nodes = []
         points = []
-        node_labels = []
         node_tag = 1
         for z in range(0, (params.step_1.number_floors + 1) * FLOOR_HEIGHT, FLOOR_HEIGHT):
             for x in np.linspace(0, params.step_1.width, params.step_1.no_nodes):
@@ -240,7 +236,7 @@ class Controller(ViktorController):
                         ux, uy, uz = 0, 0, 0
                     point = Point(x + ux, y + uy, z + uz)
                     points.append(point)
-                    # Create Viktor node and label to visualize
+                    # Create Viktor node to visualize
                     nodes.append(Sphere(centre_point=point,
                                         radius=NODE_RADIUS,
                                         material=material_nodes,
@@ -422,7 +418,7 @@ class Controller(ViktorController):
 
     @GeometryView("3D building", duration_guess=1, x_axis_to_right=True)
     def get_geometry(self, params, **kwargs):
-        # Generate the undeformed building with its nodes and labels
+        # Generate the undeformed building with its nodes
         undeformed_nodes, undeformed_building_lst = self.generate_building(
             params, "undeformed", [],
             material_nodes=material_basic_nodes,
@@ -471,7 +467,7 @@ class Controller(ViktorController):
                     coords = [float(i) for i in node.node.split('-')]
                     nodes_with_load.append({"coords": coords, "magnitude": node.magnitude, "direction": node.direction})
 
-        # Get the undeformed model with its nodes and labels.
+        # Get the undeformed model with its nodes.
         undeformed_nodes, undeformed_building_lst = self.generate_building(
             params, "undeformed", nodes_with_load,
             material_nodes=material_undeformed,
@@ -483,7 +479,7 @@ class Controller(ViktorController):
         # Run the OpenSees model
         self.run_opensees_model(nodes_with_load)
 
-        # Get the deformed model with its labels
+        # Get the deformed model
         deformed_nodes, deformed_building_lst = self.generate_building(
             params, "deformed", nodes_with_load,
             material_nodes=material_deformed,
