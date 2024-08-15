@@ -81,7 +81,7 @@ class Controller(ViktorController):
 
     def create_load_arrow(self, point_node: Point, magnitude: float, direction: str, material=None) -> Group:
         """Function to create a load arrow from a selected node"""
-        size_arrow = magnitude / 20
+        size_arrow = abs(magnitude / 20)
         scale_point = 1.5
         scale_arrow_line = 7
 
@@ -101,11 +101,15 @@ class Controller(ViktorController):
 
         arrow = Group([arrow_point, arrow_line])
 
-        # Rotate the arrow if the direction is not 'x'
+        # Rotate the arrow if the direction is not 'x' or if the magnitude is negative
+        vector = Vector(0, 0, 1)
         if direction == "y":
-            arrow.rotate(0.5 * math.pi, Vector(0, 0, 1), point=point_node)
+            arrow.rotate(0.5 * math.pi, vector, point=point_node)
         if direction == "z":
-            arrow.rotate(0.5 * math.pi, Vector(0, 1, 0), point=point_node)
+            vector = Vector(0, 1, 0)
+            arrow.rotate(0.5 * math.pi, vector, point=point_node)
+        if magnitude < 0:
+            arrow.rotate(math.pi, vector, point=point_node)
 
         return arrow
 
@@ -187,12 +191,14 @@ class Controller(ViktorController):
                                     max_displacement: float) -> Material:
         """Function to determine the color of a beam or column based on the amount of displacement. The amount of
         displacement is determined by taking the average of the displacement of the two adjacent nodes."""
+        # Find displacement of the adjacent nodes
         displacement_i_node = abs_displacement_nodes[node_tag1 - 1]
         displacement_j_node = abs_displacement_nodes[node_tag2 - 1]
         # Use the average displacement of the 2 nodes to determine the displacement
         displacement_mid_column = 0.5 * (displacement_i_node + displacement_j_node)
         red, green, blue = self.get_color_from_displacement(displacement_mid_column, max_displacement)
-        return Material("Column", color=Color(red, green, blue))
+
+        return Material("Column or beam", color=Color(red, green, blue))
 
     def add_nodes(self, params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
                   material_nodes: Material) \
@@ -251,10 +257,14 @@ class Controller(ViktorController):
                         if z == 0:
                             ops.fix(node_tag, 1, 1, 1, 1, 1, 1)
 
-                        # Check if this node is the selected node with a load to find the node tag.
-                        if [x, y, z] in [load["coords"] for load in nodes_with_load]:
-                            index = [load["coords"] for load in nodes_with_load].index([x, y, z])
-                            nodes_with_load[index]["node_tag"] = node_tag
+                        # Check if this node is the selected node with a (or multiple) load(s) to find the node tag.
+                        coords_lst = [load["coords"] for load in nodes_with_load]
+                        if [x, y, z] in coords_lst:
+                            # Find all the indices of the nodes_with_load that have x, y, z as coordinates and for all
+                            # these indices, add the current node_tag to the dictionary
+                            indices = [i for i in range(len(coords_lst)) if coords_lst[i] == [x, y, z]]
+                            for index in indices:
+                                nodes_with_load[index]["node_tag"] = node_tag
 
                     node_tag += 1
 
@@ -442,7 +452,7 @@ class Controller(ViktorController):
                         # Create the arrow of the load and add it to the building
                         material_load_arrow = Material("Arrow", color=Color(255, 0, 0))
                         load_arrow = self.create_load_arrow(Point(coords[0], coords[1], coords[2]), node.magnitude,
-                                                       node.direction, material=material_load_arrow)
+                                                            node.direction, material=material_load_arrow)
                         undeformed_building_lst.append(load_arrow)
                 else:
                     # If the information is not complete, show an error
