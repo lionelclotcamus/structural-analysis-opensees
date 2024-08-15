@@ -73,12 +73,9 @@ The docs of OpenSeesPy can be found on
     step_2.text = Text("""
 ## Run the analysis and view the results
 To view the deformed building, click on 'Run analysis' in the bottom right 🔄. You can scale the deformation with the 
-'Deformation scale factor' below. The displacement can also be mapped onto the building in a color scale by turning on 
-the 'Displacement color map'.
+'Deformation scale factor' below.
     """)
     step_2.deformation_scale = NumberField("Deformation scale factor", min=0, max=1e7, default=1000, num_decimals=2)
-    step_2.deformation_color_scale = BooleanField("Displacement color map")
-
 
 class Controller(ViktorController):
     label = "Parametric Building"
@@ -152,11 +149,13 @@ class Controller(ViktorController):
         return base_floor
 
     def get_color_from_displacement(self, displacement: float, max_displacement: float) -> Tuple[int, int, int]:
+        """Function to determine the color a node should be based on the amount of deformation. The output is a an
+        RGB colorcode"""
         # Normalize the displacement to be between 0 and 1
         normalized_displacement = displacement / max_displacement
 
         # Color scale: dark blue (0) to red (1)
-        # We will interpolate between the following colors:
+        # Interpolate between the following colors:
         # dark blue (0, 0, 139) -> blue (0, 0, 255) -> green (0, 255, 0) ->
         # yellow (255, 255, 0) -> orange (255, 165, 0) -> red (255, 0, 0)
         color_scale = [
@@ -188,8 +187,11 @@ class Controller(ViktorController):
 
     def add_color_to_column_or_beam(self, node_tag1: int, node_tag2: int, abs_displacement_nodes: List[float],
                                     max_displacement: float) -> Material:
+        """Function to determine the color of a beam or column based on the amount of displacement. The amount of
+        displacement is determined by taking the average of the displacement of the two adjacent nodes."""
         displacement_i_node = abs_displacement_nodes[node_tag1 - 1]
         displacement_j_node = abs_displacement_nodes[node_tag2 - 1]
+        # Use the average displacement of the 2 nodes to determine the displacement
         displacement_mid_column = 0.5 * (displacement_i_node + displacement_j_node)
         red, green, blue = self.get_color_from_displacement(displacement_mid_column, max_displacement)
         return Material("Column", color=Color(red, green, blue))
@@ -203,14 +205,9 @@ class Controller(ViktorController):
         If the mode is 'deformed', the displacement will be considered. If the mode is 'undeformed', nodes will be
         added to the OpenSees model and the node with a load need to be found.
         """
-        # Defining the offset for the label of the node
-        offset_label_x = params.step_1.width / OFFSET_LABEL_SCALE
-        offset_label_y = params.step_1.length / OFFSET_LABEL_SCALE
-        offset_label_z = (params.step_1.number_floors * FLOOR_HEIGHT) / OFFSET_LABEL_SCALE
-
         max_displacement = 0
         abs_displacement_nodes = []
-        if mode_of_deformation == "deformed" and params.step_2.deformation_color_scale:
+        if mode_of_deformation == "deformed":
             for node_tag in range(1, (params.step_1.number_floors + 1) * params.step_1.no_nodes ** 2 + 1):
                 ux = ops.nodeDisp(node_tag, 1)
                 uy = ops.nodeDisp(node_tag, 2)
@@ -234,10 +231,10 @@ class Controller(ViktorController):
                         uy = ops.nodeDisp(node_tag, 2) * params.step_2.deformation_scale
                         uz = ops.nodeDisp(node_tag, 3) * params.step_2.deformation_scale
 
-                        if params.step_2.deformation_color_scale:
-                            red, green, blue = self.get_color_from_displacement(abs_displacement_nodes[node_tag - 1],
-                                                                                max_displacement)
-                            material_nodes = Material("Node", color=Color(red, green, blue))
+                        # Determine the color of the node based on the displacement and change the material
+                        red, green, blue = self.get_color_from_displacement(abs_displacement_nodes[node_tag - 1],
+                                                                            max_displacement)
+                        material_nodes = Material("Node", color=Color(red, green, blue))
 
                     else:
                         ux, uy, uz = 0, 0, 0
@@ -275,7 +272,7 @@ class Controller(ViktorController):
         arrows = []
         for node in nodes_with_load:
             arrow = self.create_load_arrow(points[node["node_tag"] - 1], node["magnitude"], node["direction"],
-                                      material=material_arrow)
+                                           material=material_arrow)
             arrows.append(arrow)
 
         return arrows
@@ -296,8 +293,6 @@ class Controller(ViktorController):
                     # Find the node and its coordinates that is at the same x,y location but on the next floor to create
                     # the vertical column.
                     node_tag2 = node_tag1 + params.step_1.no_nodes * params.step_1.no_nodes
-                    i_node = points[node_tag1 - 1]
-                    j_node = points[node_tag2 - 1]
 
                     if mode_of_deformation == "undeformed":
                         # Create the OpenSees element
@@ -306,7 +301,12 @@ class Controller(ViktorController):
                         ops.element("elasticBeamColumn", element_tag, node_tag1, node_tag2, area, E, G, Jxx, Iy,
                                     Iz, 1, "-mass", mass_x_element, mass_type)
 
-                    if params.step_2.deformation_color_scale and mode_of_deformation == "deformed":
+                    i_node = points[node_tag1 - 1]
+                    j_node = points[node_tag2 - 1]
+
+                    # If the mode is "deformed", the color of the column will change based on the amount of
+                    # displacement of the adjacent nodes. Therefore, the material should be changed
+                    if mode_of_deformation == "deformed":
                         material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
                                                                     max_displacement)
 
@@ -344,7 +344,9 @@ class Controller(ViktorController):
                     i_node = points[node_tag1 - 1]
                     j_node = points[node_tag2 - 1]
 
-                    if params.step_2.deformation_color_scale and mode_of_deformation == "deformed":
+                    # If the mode is "deformed", the color of the column will change based on the amount of
+                    # displacement of the adjacent nodes. Therefore, the material should be changed
+                    if mode_of_deformation == "deformed":
                         material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
                                                                     max_displacement)
 
@@ -373,7 +375,9 @@ class Controller(ViktorController):
                     i_node = points[node_tag1 - 1]
                     j_node = points[node_tag2 - 1]
 
-                    if params.step_2.deformation_color_scale and mode_of_deformation == "deformed":
+                    # If the mode is "deformed", the color of the column will change based on the amount of
+                    # displacement of the adjacent nodes. Therefore, the material should be changed
+                    if mode_of_deformation == "deformed":
                         material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
                                                                     max_displacement)
 
