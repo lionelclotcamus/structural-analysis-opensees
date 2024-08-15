@@ -196,7 +196,7 @@ class Controller(ViktorController):
 
     def add_nodes(self, params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
                   material_nodes: Material) \
-            -> Tuple[List[Point], List[Sphere], List[Label], List, float]:
+            -> Tuple[List[Point], List[Sphere], List, float]:
         """Function to add nodes to the OpenSees model and for visualisation.
         First, an offset is defined for the positioning of the labels next to the nodes. Then, the nodes will be added
         by looping over the building.
@@ -248,10 +248,6 @@ class Controller(ViktorController):
                                         radius=NODE_RADIUS,
                                         material=material_nodes,
                                         identifier=f"{x + ux}-{y + uy}-{z + uz}"))
-                    node_labels.append(
-                        Label(Point(x + ux + offset_label_x, y + uy + offset_label_y, z + uz + offset_label_z),
-                              str(node_tag), size_factor=0.6)
-                    )
 
                     if mode_of_deformation == 'undeformed':
                         # Create the OpenSees structural node. The node is identified with a node tag.
@@ -269,7 +265,7 @@ class Controller(ViktorController):
 
                     node_tag += 1
 
-        return points, nodes, node_labels, abs_displacement_nodes, max_displacement
+        return points, nodes, abs_displacement_nodes, max_displacement
 
     def add_arrows(self, nodes_with_load: List[Dict] | List, points: List[Point], material_arrow: Material) \
             -> List[Group] | List:
@@ -392,7 +388,7 @@ class Controller(ViktorController):
 
     def generate_building(self, params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
                           material_nodes: Material, material: Material, material_arrow: Material) \
-            -> Tuple[List[Sphere], List, List[Label]]:
+            -> Tuple[List[Sphere], List]:
         # Initialize structural model
         if mode_of_deformation == "undeformed":
             ops.wipe()
@@ -400,7 +396,7 @@ class Controller(ViktorController):
 
         # Adding the base floor, nodes and arrows for the loads.
         base_floor = self.add_base_floor(params)
-        points, nodes, node_labels, abs_displacement_nodes, max_displacement = self.add_nodes(
+        points, nodes, abs_displacement_nodes, max_displacement = self.add_nodes(
             params, mode_of_deformation, nodes_with_load, material_nodes
         )
         arrows = self.add_arrows(nodes_with_load, points, material_arrow)
@@ -418,12 +414,12 @@ class Controller(ViktorController):
         # Create the undeformed building, which is the base floor, the nodes, the columns and the beams
         building_lst = [base_floor, Group(nodes), Group(columns), Group(beams), Group(arrows)]
 
-        return nodes, building_lst, node_labels
+        return nodes, building_lst
 
     @GeometryView("3D building", duration_guess=1, x_axis_to_right=True)
     def get_geometry(self, params, **kwargs):
         # Generate the undeformed building with its nodes and labels
-        undeformed_nodes, undeformed_building_lst, labels = self.generate_building(
+        undeformed_nodes, undeformed_building_lst = self.generate_building(
             params, "undeformed", [],
             material_nodes=material_basic_nodes,
             material=material_basic,
@@ -452,7 +448,7 @@ class Controller(ViktorController):
                     # If the information is not complete, show an error
                     raise UserError(f"Complete the information from load number {i + 1}.")
 
-        return GeometryResult(Group(undeformed_building_lst), labels)
+        return GeometryResult(Group(undeformed_building_lst))
 
     @GeometryView("Deformed 3D building", duration_guess=10, x_axis_to_right=True, update_label="Run analysis")
     def get_deformed_geometry(self, params, **kwargs):
@@ -472,7 +468,7 @@ class Controller(ViktorController):
                     nodes_with_load.append({"coords": coords, "magnitude": node.magnitude, "direction": node.direction})
 
         # Get the undeformed model with its nodes and labels.
-        undeformed_nodes, undeformed_building_lst, undeformed_labels = self.generate_building(
+        undeformed_nodes, undeformed_building_lst = self.generate_building(
             params, "undeformed", nodes_with_load,
             material_nodes=material_undeformed,
             material=material_undeformed,
@@ -484,7 +480,7 @@ class Controller(ViktorController):
         self.run_opensees_model(nodes_with_load)
 
         # Get the deformed model with its labels
-        deformed_nodes, deformed_building_lst, labels_deformed_nodes = self.generate_building(
+        deformed_nodes, deformed_building_lst = self.generate_building(
             params, "deformed", nodes_with_load,
             material_nodes=material_deformed,
             material=material_deformed,
@@ -492,4 +488,4 @@ class Controller(ViktorController):
         )
         deformed_building = Group(deformed_building_lst)
 
-        return GeometryResult([deformed_building, undeformed_building], labels_deformed_nodes)
+        return GeometryResult([deformed_building, undeformed_building])
