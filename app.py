@@ -3,13 +3,8 @@ from typing import List, Dict, Tuple
 
 import numpy as np
 import openseespy.opensees as ops
-from munch import Munch
 
-from viktor.parametrization import (ViktorParametrization, NumberField, Text, GeometrySelectField, DynamicArray,
-                                    IntegerField, Step, OptionField)
-from viktor import ViktorController, UserError
-from viktor.geometry import Material, Color, Group, Point, RectangularExtrusion, Line, Sphere, Cone, Vector
-from viktor.views import GeometryView, GeometryResult
+import viktor as vkt
 
 FLOOR_HEIGHT = 4
 DEFAULT_NUMBER_FLOORS = 10
@@ -28,17 +23,17 @@ Iz = 2150.  # Second moment of area about the local z-axis
 coord_transf = "Linear"  # Linear, PDelta, Corotational
 mass_type = "-lMass"  # -lMass, -cMass
 
-material_basic_nodes = Material("Node", color=Color.viktor_blue())
-material_basic = Material("Building", color=Color(165, 165, 165))
-material_deformed = Material("Node", color=Color.viktor_blue())
-material_deformed_arrow = Material("Arrow", color=Color(255, 0, 0))
-material_undeformed = Material("Node", color=Color(220, 220, 220), opacity=0.5)
-material_undeformed_arrow = Material("Arrow", color=Color(255, 158, 145), opacity=0.5)
+material_basic_nodes = vkt.Material("Node", color=vkt.Color.viktor_blue())
+material_basic = vkt.Material("Building", color=vkt.Color(165, 165, 165))
+material_deformed = vkt.Material("Node", color=vkt.Color.viktor_blue())
+material_deformed_arrow = vkt.Material("Arrow", color=vkt.Color(255, 0, 0))
+material_undeformed = vkt.Material("Node", color=vkt.Color(220, 220, 220), opacity=0.5)
+material_undeformed_arrow = vkt.Material("Arrow", color=vkt.Color(255, 158, 145), opacity=0.5)
 
 
-class Parametrization(ViktorParametrization):
-    step_1 = Step("Create Model", views=["get_geometry"])
-    step_1.text1 = Text(
+class Parametrization(vkt.ViktorParametrization):
+    step_1 = vkt.Step("Create Model", views=["get_geometry"])
+    step_1.text1 = vkt.Text(
         """## Structural Analysis using OpenSees\n
 Welcome to our Structural Analysis App, a tool designed for the analysis of 3D frame buildings. 
 Built on the OpenSeesPy framework, which leverages OpenSees (Open System for Earthquake Engineering Simulation), 
@@ -53,60 +48,60 @@ The docs of OpenSeesPy can be found on
 [this page](https://openseespydoc.readthedocs.io/).
         """
     )
-    step_1.width = NumberField("Width", min=1, default=30, suffix="m", num_decimals=2)
-    step_1.length = NumberField("Length", min=1, default=30, suffix="m", num_decimals=2)
-    step_1.number_floors = NumberField("Number of floors", variant="slider", min=1, max=40,
-                                       default=DEFAULT_NUMBER_FLOORS, num_decimals=0)
-    step_1.no_nodes = IntegerField("Number of nodes per side", min=2, default=4)
+    step_1.width = vkt.NumberField("Width", min=1, default=30, suffix="m", num_decimals=2)
+    step_1.length = vkt.NumberField("Length", min=1, default=30, suffix="m", num_decimals=2)
+    step_1.number_floors = vkt.NumberField("Number of floors", variant="slider", min=1, max=40,
+                                           default=DEFAULT_NUMBER_FLOORS, num_decimals=0)
+    step_1.no_nodes = vkt.IntegerField("Number of nodes per side", min=2, default=4)
 
-    step_1.nodes_with_load_array = DynamicArray(
+    step_1.nodes_with_load_array = vkt.DynamicArray(
         "Add loads",
         default=[{"magnitude": 100, "direction": "x", "node": f"0 - 0 - {DEFAULT_NUMBER_FLOORS * FLOOR_HEIGHT}"}]
     )
-    step_1.nodes_with_load_array.magnitude = NumberField("Load", suffix="kN", num_decimals=2, default=100)
-    step_1.nodes_with_load_array.direction = OptionField("Direction", options=["x", "y", "z"], default="x")
-    step_1.nodes_with_load_array.node = GeometrySelectField("Select the node to apply a load")
+    step_1.nodes_with_load_array.magnitude = vkt.NumberField("Load", suffix="kN", num_decimals=2, default=100)
+    step_1.nodes_with_load_array.direction = vkt.OptionField("Direction", options=["x", "y", "z"], default="x")
+    step_1.nodes_with_load_array.node = vkt.GeometrySelectField("Select the node to apply a load")
 
-    step_2 = Step("Run Analysis", views=["get_deformed_geometry"], width=30)
-    step_2.text = Text("""
+    step_2 = vkt.Step("Run Analysis", views=["get_deformed_geometry"], width=30)
+    step_2.text = vkt.Text("""
 ## Run the analysis and view the results
 To view the deformed building, click on 'Run analysis' in the bottom right 🔄. You can scale the deformation with the 
 'Deformation scale factor' below.
     """)
-    step_2.deformation_scale = NumberField("Deformation scale factor", min=0, max=1e7, default=1000, num_decimals=2)
+    step_2.deformation_scale = vkt.NumberField("Deformation scale factor", min=0, max=1e7, default=1000, num_decimals=2)
 
-class Controller(ViktorController):
+class Controller(vkt.ViktorController):
     label = "Parametric Building"
     parametrization = Parametrization
 
-    def create_load_arrow(self, point_node: Point, magnitude: float, direction: str, material=None) -> Group:
+    def create_load_arrow(self, point_node: vkt.Point, magnitude: float, direction: str, material=None) -> vkt.Group:
         """Function to create a load arrow from a selected node"""
         size_arrow = abs(magnitude / 20)
         scale_point = 1.5
         scale_arrow_line = 7
 
         # Create points for the origin of the arrow point and line, based on the coordinate of the node with the load
-        origin_of_arrow_point = Point(point_node.x - size_arrow - NODE_RADIUS, point_node.y,
-                                      point_node.z)
-        origin_of_arrow_line = Point(origin_of_arrow_point.x - size_arrow, origin_of_arrow_point.y,
-                                     origin_of_arrow_point.z)
+        origin_of_arrow_point = vkt.Point(point_node.x - size_arrow - NODE_RADIUS, point_node.y,
+                                          point_node.z)
+        origin_of_arrow_line = vkt.Point(origin_of_arrow_point.x - size_arrow, origin_of_arrow_point.y, 
+                                         origin_of_arrow_point.z)
 
         # Creating the arrow with Viktor Cone and RectangularExtrusion
-        arrow_point = Cone(size_arrow / scale_point, size_arrow, origin=origin_of_arrow_point,
-                           orientation=Vector(1, 0, 0),
-                           material=material)
-        arrow_line = RectangularExtrusion(size_arrow / scale_arrow_line, size_arrow / scale_arrow_line,
-                                          Line(origin_of_arrow_line, origin_of_arrow_point),
-                                          material=material)
+        arrow_point = vkt.Cone(size_arrow / scale_point, size_arrow, origin=origin_of_arrow_point,
+                               orientation=vkt.Vector(1, 0, 0),
+                               material=material)
+        arrow_line = vkt.RectangularExtrusion(size_arrow / scale_arrow_line, size_arrow / scale_arrow_line,
+                                              vkt.Line(origin_of_arrow_line, origin_of_arrow_point),
+                                              material=material)
 
-        arrow = Group([arrow_point, arrow_line])
+        arrow = vkt.Group([arrow_point, arrow_line])
 
         # Rotate the arrow if the direction is not 'x' or if the magnitude is negative
-        vector = Vector(0, 0, 1)
+        vector = vkt.Vector(0, 0, 1)
         if direction == "y":
             arrow.rotate(0.5 * math.pi, vector, point=point_node)
         if direction == "z":
-            vector = Vector(0, 1, 0)
+            vector = vkt.Vector(0, 1, 0)
             arrow.rotate(0.5 * math.pi, vector, point=point_node)
         if magnitude < 0:
             arrow.rotate(math.pi, vector, point=point_node)
@@ -136,17 +131,17 @@ class Controller(ViktorController):
 
         return
 
-    def add_base_floor(self, params: Munch) -> RectangularExtrusion:
+    def add_base_floor(self, params) -> vkt.RectangularExtrusion:
         """Function to add a base floor to the model for visualization.
         This has the width of the building plus some extra space. The extra space is defined by which direction is the
         largest: the width or the length.
         """
         extra_width_floor = max(params.step_1.width, params.step_1.length) / 2
-        base_floor = RectangularExtrusion(
+        base_floor = vkt.RectangularExtrusion(
             width=params.step_1.width + 2 * extra_width_floor,
             height=3 * b,
-            line=Line(Point(0.5 * params.step_1.width, -extra_width_floor, 0),
-                      Point(0.5 * params.step_1.width, params.step_1.length + extra_width_floor, 0))
+            line=vkt.Line(vkt.Point(0.5 * params.step_1.width, -extra_width_floor, 0),
+                          vkt.Point(0.5 * params.step_1.width, params.step_1.length + extra_width_floor, 0))
         )
         return base_floor
 
@@ -188,7 +183,7 @@ class Controller(ViktorController):
         return red, green, blue
 
     def add_color_to_column_or_beam(self, node_tag1: int, node_tag2: int, abs_displacement_nodes: List[float],
-                                    max_displacement: float) -> Material:
+                                    max_displacement: float) -> vkt.Material:
         """Function to determine the color of a beam or column based on the amount of displacement. The amount of
         displacement is determined by taking the average of the displacement of the two adjacent nodes."""
         # Find displacement of the adjacent nodes
@@ -198,11 +193,11 @@ class Controller(ViktorController):
         displacement_mid_column = 0.5 * (displacement_i_node + displacement_j_node)
         red, green, blue = self.get_color_from_displacement(displacement_mid_column, max_displacement)
 
-        return Material("Column or beam", color=Color(red, green, blue))
+        return vkt.Material("Column or beam", color=vkt.Color(red, green, blue))
 
-    def add_nodes(self, params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
-                  material_nodes: Material) \
-            -> Tuple[List[Point], List[Sphere], List, float]:
+    def add_nodes(self, params, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
+                  material_nodes: vkt.Material) \
+            -> Tuple[List[vkt.Point], List[vkt.Sphere], List, float]:
         """Function to add nodes to the OpenSees model and for visualisation.
         The nodes will be added by looping over the building.
         If the mode is 'deformed', the displacement will be considered. If the mode is 'undeformed', nodes will be
@@ -236,17 +231,17 @@ class Controller(ViktorController):
                         # Determine the color of the node based on the displacement and change the material
                         red, green, blue = self.get_color_from_displacement(abs_displacement_nodes[node_tag - 1],
                                                                             max_displacement)
-                        material_nodes = Material("Node", color=Color(red, green, blue))
+                        material_nodes = vkt.Material("Node", color=vkt.Color(red, green, blue))
 
                     else:
                         ux, uy, uz = 0, 0, 0
-                    point = Point(x + ux, y + uy, z + uz)
+                    point = vkt.Point(x + ux, y + uy, z + uz)
                     points.append(point)
                     # Create Viktor node to visualize
-                    nodes.append(Sphere(centre_point=point,
-                                        radius=NODE_RADIUS,
-                                        material=material_nodes,
-                                        identifier=f"{x + ux}-{y + uy}-{z + uz}"))
+                    nodes.append(vkt.Sphere(centre_point=point,
+                                            radius=NODE_RADIUS,
+                                            material=material_nodes,
+                                            identifier=f"{x + ux}-{y + uy}-{z + uz}"))
 
                     if mode_of_deformation == 'undeformed':
                         # Create the OpenSees structural node. The node is identified with a node tag.
@@ -270,8 +265,8 @@ class Controller(ViktorController):
 
         return points, nodes, abs_displacement_nodes, max_displacement
 
-    def add_arrows(self, nodes_with_load: List[Dict] | List, points: List[Point], material_arrow: Material) \
-            -> List[Group] | List:
+    def add_arrows(self, nodes_with_load: List[Dict] | List, points: List[vkt.Point], material_arrow: vkt.Material) \
+            -> List[vkt.Group] | List:
         """Function to add an arrow to the building for visualisation.
         To create the load arrows, loop through the nodes with a load.
         """
@@ -283,9 +278,9 @@ class Controller(ViktorController):
 
         return arrows
 
-    def add_columns(self, params: Munch, mode_of_deformation: str, points: List[Point], material: Material,
+    def add_columns(self, params, mode_of_deformation: str, points: List[vkt.Point], material: vkt.Material,
                     abs_displacement_nodes: List, max_displacement: float) \
-            -> Tuple[List[RectangularExtrusion], int]:
+            -> Tuple[List[vkt.RectangularExtrusion], int]:
         """Function to add columns to the model.
         Adding columns by looping over the floors, and the nodes in the width and length of the building.
         If the mode is 'undeformed', the columns will be added to the OpenSees model with as an element.
@@ -317,7 +312,7 @@ class Controller(ViktorController):
                                                                     max_displacement)
 
                     # Create the column to visualize
-                    col = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node), material=material)
+                    col = vkt.RectangularExtrusion(width=b, height=b, line=vkt.Line(i_node, j_node), material=material)
                     columns.append(col)
 
                     element_tag += 1
@@ -325,9 +320,9 @@ class Controller(ViktorController):
 
         return columns, element_tag
 
-    def add_beams(self, params: Munch, mode_of_deformation: str, points: List[Point], element_tag: int,
-                  material: Material, abs_displacement_nodes: List, max_displacement: float) \
-            -> List[RectangularExtrusion]:
+    def add_beams(self, params, mode_of_deformation: str, points: List[vkt.Point], element_tag: int,
+                  material: vkt.Material, abs_displacement_nodes: List, max_displacement: float) \
+            -> List[vkt.RectangularExtrusion]:
         """"Function to add beams to the model.
         First in the x-direction, then in the y-direction by looping over the levels and the width and length.
         If the mode is 'undeformed', add the beams as an element to the OpenSees model."""
@@ -356,7 +351,7 @@ class Controller(ViktorController):
                         material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
                                                                     max_displacement)
 
-                    beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node), material=material)
+                    beam = vkt.RectangularExtrusion(width=b, height=b, line=vkt.Line(i_node, j_node), material=material)
                     beams.append(beam)
 
                     element_tag += 1
@@ -387,7 +382,7 @@ class Controller(ViktorController):
                         material = self.add_color_to_column_or_beam(node_tag1, node_tag2, abs_displacement_nodes,
                                                                     max_displacement)
 
-                    beam = RectangularExtrusion(width=b, height=b, line=Line(i_node, j_node),
+                    beam = vkt.RectangularExtrusion(width=b, height=b, line=vkt.Line(i_node, j_node),
                                                 material=material)
                     beams.append(beam)
                     element_tag += 1
@@ -396,9 +391,9 @@ class Controller(ViktorController):
 
         return beams
 
-    def generate_building(self, params: Munch, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
-                          material_nodes: Material, material: Material, material_arrow: Material) \
-            -> Tuple[List[Sphere], List]:
+    def generate_building(self, params, mode_of_deformation: str, nodes_with_load: List[Dict] | List,
+                          material_nodes: vkt.Material, material: vkt.Material, material_arrow: vkt.Material) \
+            -> Tuple[List[vkt.Sphere], List]:
         # Initialize structural model
         if mode_of_deformation == "undeformed":
             ops.wipe()
@@ -422,11 +417,11 @@ class Controller(ViktorController):
                                max_displacement)  # Adding beams
 
         # Create the undeformed building, which is the base floor, the nodes, the columns and the beams
-        building_lst = [base_floor, Group(nodes), Group(columns), Group(beams), Group(arrows)]
+        building_lst = [base_floor, vkt.Group(nodes), vkt.Group(columns), vkt.Group(beams), vkt.Group(arrows)]
 
         return nodes, building_lst
 
-    @GeometryView("3D building", duration_guess=1, x_axis_to_right=True)
+    @vkt.GeometryView("3D building", duration_guess=1, x_axis_to_right=True)
     def get_geometry(self, params, **kwargs):
         # Generate the undeformed building with its nodes
         undeformed_nodes, undeformed_building_lst = self.generate_building(
@@ -444,34 +439,34 @@ class Controller(ViktorController):
                         # Find the coordinates of the node and check if it is part of the undeformed nodes. If not,
                         # display an error to the user.
                         coords = [float(i) for i in node.node.split("-")]
-                        if (Point(coords[0], coords[1], coords[2]) not in
+                        if (vkt.Point(coords[0], coords[1], coords[2]) not in
                                 [sphere.centre_point for sphere in undeformed_nodes]):
-                            raise UserError(f"The selected node for load number {i + 1} is not an existing node,"
+                            raise vkt.UserError(f"The selected node for load number {i + 1} is not an existing node,"
                                             f" reselect the node.")
 
                         # Create the arrow of the load and add it to the building
-                        material_load_arrow = Material("Arrow", color=Color(255, 0, 0))
-                        load_arrow = self.create_load_arrow(Point(coords[0], coords[1], coords[2]), node.magnitude,
+                        material_load_arrow = vkt.Material("Arrow", color=vkt.Color(255, 0, 0))
+                        load_arrow = self.create_load_arrow(vkt.Point(coords[0], coords[1], coords[2]), node.magnitude,
                                                             node.direction, material=material_load_arrow)
                         undeformed_building_lst.append(load_arrow)
                 else:
                     # If the information is not complete, show an error
-                    raise UserError(f"Complete the information from load number {i + 1}.")
+                    raise vkt.UserError(f"Complete the information from load number {i + 1}.")
 
-        return GeometryResult(Group(undeformed_building_lst))
+        return vkt.GeometryResult(vkt.Group(undeformed_building_lst))
 
-    @GeometryView("Deformed 3D building", duration_guess=10, x_axis_to_right=True, update_label="Run analysis")
+    @vkt.GeometryView("Deformed 3D building", duration_guess=10, x_axis_to_right=True, update_label="Run analysis")
     def get_deformed_geometry(self, params, **kwargs):
         # Find loads. If no loads are selected, an error is displayed to the user
         if len(params.step_1.nodes_with_load_array) == 0:
-            raise UserError("Select at least one load in the '3D building' view")
+            raise vkt.UserError("Select at least one load in the '3D building' view")
         else:
             nodes_with_load = []
             # Loop through the array with loads
             for node in params.step_1.nodes_with_load_array:
                 # Check if all the information is given for the load. If not, display an error
                 if node.magnitude is None or node.node is None:
-                    raise UserError("Fill out all the information of the load in the previous step")
+                    raise vkt.UserError("Fill out all the information of the load in the previous step")
                 else:
                     # Find the coordinate of the node. Add it to a dictionary for easy access later
                     coords = [float(i) for i in node.node.split('-')]
@@ -484,18 +479,18 @@ class Controller(ViktorController):
             material=material_undeformed,
             material_arrow=material_undeformed_arrow
         )
-        undeformed_building = Group(undeformed_building_lst)
+        undeformed_building = vkt.Group(undeformed_building_lst)
 
         # Run the OpenSees model
         self.run_opensees_model(nodes_with_load)
 
         # Get the deformed model
-        deformed_nodes, deformed_building_lst = self.generate_building(
+        _, deformed_building_lst = self.generate_building(
             params, "deformed", nodes_with_load,
             material_nodes=material_deformed,
             material=material_deformed,
             material_arrow=material_deformed_arrow
         )
-        deformed_building = Group(deformed_building_lst)
+        deformed_building = vkt.Group(deformed_building_lst)
 
-        return GeometryResult([deformed_building, undeformed_building])
+        return vkt.GeometryResult([deformed_building, undeformed_building])
