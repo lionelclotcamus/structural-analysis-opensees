@@ -1,2 +1,2 @@
 viktor>=14, <15
-openseespy==3.7.0.4
+openseespy
